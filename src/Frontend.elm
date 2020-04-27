@@ -126,6 +126,7 @@ viewCharts model =
 chartId =
     "my-chart"
 
+
 type alias Datum =
     { date : Date.Date
     , goal : Maybe Float
@@ -133,8 +134,10 @@ type alias Datum =
     , value2 : Float
     }
 
+
 april =
     Date.fromCalendarDate 2020 Apr
+
 
 sampleDays =
     [ Datum (april 1) (Just 10) 5 7
@@ -149,17 +152,18 @@ sampleDays =
     , Datum (april 10) (Just 11) 6 5
     ]
 
+
 chartConfig : Chart.Config Datum FrontendMsg
 chartConfig =
     { id = chartId
     , toMsg = ChartMsg
     , toDate = .date
     , bars =
-        [ { label = "v1", color = Chart.rgba 0 0 0 0.6, accessor = .value1 }
-        , { label = "v2", color = Chart.rgba 0 0 0 0.4, accessor = .value2 }
+        [ { label = "v1", color = rgba 0 0 0 0.6, accessor = .value1 }
+        , { label = "v2", color = rgba 0 0 0 0.4, accessor = .value2 }
         ]
     , lines =
-        [ { label = "l1", color = Chart.rgba 0 0 0 1, accessor = .goal }
+        [ { label = "l1", color = rgba 0 0 0 1, accessor = .goal }
         ]
     , items = sampleDays
     , popover = Just popoverConfig
