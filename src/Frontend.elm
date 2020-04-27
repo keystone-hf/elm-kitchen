@@ -104,7 +104,21 @@ view model =
     { title = "Keystone Kitchen"
     , body =
         [ layout layoutAttrs <|
-            column [ width fill, padding 20, spacing 20 ] [ viewLogo, viewCharts model ]
+            column [ width fill, padding 20, spacing 20 ]
+                [ viewLogo
+                , textColumn
+                    [ paddingEach { top = 20, bottom = 0, right = 0, left = 0 }
+                    , Font.color <| rgba 0 0 0 0.5
+                    , Font.size 14
+                    , width fill
+                    ]
+                    [ paragraph [] [ text "A collection of real world UI examples built in Elm by folks @ Keystone H&F." ]
+                    ]
+                , viewCharts model
+                , row
+                    [ width fill, Font.size 14, Font.color <| rgba 0 0 0 0.5, paddingXY 0 40 ]
+                    [ el [ centerX ] <| text "This app is powered by Lamdera." ]
+                ]
         ]
     }
 
@@ -139,7 +153,20 @@ viewLogo =
         , height (px 90)
         ]
         [ el [ paddingXY 20 0, height fill, width fill, Background.color <| rgb 0 0 0 ] keystoneLogo
-        , el [ paddingXY 20 0, height fill, width fill ] lamderaLogo
+        , el
+            [ paddingXY 20 0
+            , height fill
+            , width fill
+            , onLeft <|
+                image
+                    [ moveRight 8
+                    , moveDown 36
+                    , width (px 16)
+                    , height (px 16)
+                    ]
+                    { src = "/heart.png", description = "" }
+            ]
+            lamderaLogo
         ]
 
 
@@ -164,14 +191,15 @@ viewCharts model =
                 , height (px 320)
                 , htmlAttribute <| Attr.id chartId
                 , onRight <|
-                    newTabLink []
+                    newTabLink
+                        [ moveLeft 20
+                        , moveUp 30
+                        ]
                         { url = "https://github.com/keystone-hf/elm-kitchen"
                         , label =
                             image
-                                [ width (px 24)
-                                , height (px 24)
-                                , moveLeft 24
-                                , moveUp 34
+                                [ width (px 20)
+                                , height (px 20)
                                 ]
                                 { src = "/gh.png", description = "GitHub Octocat" }
                         }
@@ -197,6 +225,10 @@ viewCharts model =
                     ]
                 )
             ]
+        , el [ paddingEach { top = 20, bottom = 10, left = 0, right = 0 } ] <|
+            text "Text editor examples"
+        , el [ Font.variant Font.smallCaps, Font.size 16 ] <|
+            text "coming soon..."
         ]
 
 
@@ -244,6 +276,8 @@ sampleDays =
     , Datum (april 8) (Just 12) 2 4
     , Datum (april 9) (Just 12) 10 5
     , Datum (april 10) (Just 11) 6 5
+    , Datum (april 11) (Just 11) 8 6
+    , Datum (april 12) (Just 10) 5 3
     ]
 
 
