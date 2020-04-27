@@ -14,6 +14,8 @@ import Element.Region as Region
 import Html
 import Html.Attributes as Attr
 import Lamdera
+import Maybe.Extra
+import SyntaxHighlight exposing (elm, gitHub, toBlockHtml, useTheme)
 import Task
 import Time exposing (..)
 import Types exposing (..)
@@ -102,8 +104,7 @@ view model =
     { title = "Keystone Kitchen"
     , body =
         [ layout layoutAttrs <|
-            column [ width fill, padding 20, spacing 20 ]
-                [ viewLogo, viewCharts model ]
+            column [ width fill, padding 20, spacing 20 ] [ viewLogo, viewCharts model ]
         ]
     }
 
@@ -111,97 +112,90 @@ view model =
 viewLogo =
     let
         keystoneLogo =
-            "https://keystone.fit/static/media/logo.623420ca.svg"
+            el
+                [ height fill
+                , width fill
+                , Background.uncropped "https://keystone.fit/static/media/logo.623420ca.svg"
+                ]
+                none
 
         lamderaLogo =
-            "https://lamdera.app/lamdera-logo-black.png"
+            el
+                [ height fill
+                , width fill
+                , Background.uncropped "https://lamdera.app/lamdera-logo-black.png"
+                ]
+                none
 
         logo =
-            image [ width <| px 150 ]
+            image [ width (px 150) ]
     in
-    row [ Border.width 2, Border.rounded 4, Border.color (rgb 0 0 0) ]
-        [ el [ padding 20, Background.color <| rgba 0 0 0 1 ] <| logo { src = keystoneLogo, description = "Keystone logo" }
-        , el [ padding 20, Background.color <| rgba 0 0 0 0 ] <| logo { src = lamderaLogo, description = "Lamdera logo" }
+    row
+        [ Border.width 2
+        , Border.rounded 4
+        , Border.color <| rgb 0 0 0
+        , width (fill |> maximum 320)
+        , centerX
+        , height (px 90)
+        ]
+        [ el [ paddingXY 20 0, height fill, width fill, Background.color <| rgb 0 0 0 ] keystoneLogo
+        , el [ paddingXY 20 0, height fill, width fill ] lamderaLogo
         ]
 
 
 viewCharts model =
-    column [ width fill, spacing 20 ]
-        [ el [ Font.bold ] <|
+    let
+        viewChart =
+            model.containerSize
+                |> Maybe.map (\( w, h ) -> Chart.view chartConfig model.chart { width = w, height = h })
+                |> Maybe.withDefault none
+    in
+    column [ width fill, spacing 10, height fill ]
+        [ el [ paddingXY 0 10 ] <|
             text "Chart examples"
-        , el [ Font.variant Font.smallCaps, Font.bold, Font.size 16, moveDown 10 ] <|
-            text "stacked bar chart with goal"
-        , column [ width fill, height (px 320), spacing 10, htmlAttribute <| Attr.id chartId ]
-            [ el [ Border.rounded 4, width fill, Background.color (rgba 0 0 0 0.1) ] <|
-                case model.containerSize of
-                    Nothing ->
-                        none
-
-                    Just ( w, h ) ->
-                        Chart.view chartConfig model.chart { width = w, height = h }
-            , el [ Font.size 16, Font.variant Font.smallCaps ] <| text "chart configuration"
-            , el [ width fill, Border.rounded 4, Background.color <| rgba 0 0 0 0.1, Font.size 14, Font.family [ Font.monospace ], padding 10 ] <| text """
-chartId =
-    "my-chart"
-
-
-type alias Datum =
-    { date : Date.Date
-    , goal : Maybe Float
-    , value1 : Float
-    , value2 : Float
-    }
-
-
-april =
-    Date.fromCalendarDate 2020 Apr
-
-
-sampleDays =
-    [ Datum (april 1) (Just 10) 5 7
-    , Datum (april 2) (Just 8) 6 8
-    , Datum (april 3) (Just 11) 4 6
-    , Datum (april 4) Nothing 0 4
-    , Datum (april 5) (Just 10) 5 7
-    , Datum (april 6) (Just 12) 6 7
-    , Datum (april 7) (Just 12) 5 7
-    , Datum (april 8) (Just 12) 2 4
-    , Datum (april 9) (Just 12) 10 5
-    , Datum (april 10) (Just 11) 6 5
-    ]
-
-
-chartConfig : Chart.Config Datum FrontendMsg
-chartConfig =
-    { id = chartId
-    , toMsg = ChartMsg
-    , toDate = .date
-    , bars =
-        [ { label = "v1", color = rgba 0 0 0 0.6, accessor = .value1 }
-        , { label = "v2", color = rgba 0 0 0 0.4, accessor = .value2 }
-        ]
-    , lines =
-        [ { label = "l1", color = rgba 0 0 0 1, accessor = .goal }
-        ]
-    , items = sampleDays
-    , popover = Just popoverConfig
-    , yExtent = Nothing
-    }
-
-
-popoverConfig : Chart.Popover Datum FrontendMsg
-popoverConfig =
-    { width = always 100
-    , height = always 60
-    , visible = always True
-    , view =
-        \\x ->
-            column [ width fill, Font.size 14, Font.color <| rgb 1 1 1 ]
-                [ el [] <| text <| "V1: " ++ String.fromFloat x.value1
-                , el [] <| text <| "V2: " ++ String.fromFloat x.value2
+        , el [ Font.variant Font.smallCaps, Font.size 16 ] <|
+            text "stacked bar chart with goal line"
+        , column [ width fill, spacing 10 ]
+            [ el
+                [ Border.rounded 4
+                , Border.width 1
+                , Border.dashed
+                , width fill
+                , height (px 320)
+                , htmlAttribute <| Attr.id chartId
+                , onRight <|
+                    newTabLink []
+                        { url = "https://github.com/keystone-hf/elm-kitchen"
+                        , label =
+                            image
+                                [ width (px 24)
+                                , height (px 24)
+                                , moveLeft 24
+                                , moveUp 34
+                                ]
+                                { src = "/gh.png", description = "GitHub Octocat" }
+                        }
                 ]
-    }
-            """
+                viewChart
+            , column
+                [ width fill
+                , Border.width 1
+                , Border.rounded 4
+                , Border.dashed
+                , Border.color <| rgba 0 0 0 0.5
+                , Font.size 14
+                , Font.family [ Font.monospace ]
+                , padding 20
+                , scrollbarX
+                ]
+                (List.map html
+                    [ useTheme gitHub
+                    , elm snippetChart
+                        |> Result.map (toBlockHtml <| Just 1)
+                        |> Result.withDefault
+                            (Html.code [] [ Html.text snippetChart ])
+                    ]
+                )
             ]
         ]
 
@@ -283,3 +277,68 @@ popoverConfig =
                 , el [] <| text <| "V2: " ++ String.fromFloat x.value2
                 ]
     }
+
+
+snippetChart =
+    """
+chartId =
+    "my-chart"
+
+
+type alias Datum =
+    { date : Date.Date
+    , goal : Maybe Float
+    , value1 : Float
+    , value2 : Float
+    }
+
+
+april =
+    Date.fromCalendarDate 2020 Apr
+
+
+sampleDays =
+    [ Datum (april 1) (Just 10) 5 7
+    , Datum (april 2) (Just 8) 6 8
+    , Datum (april 3) (Just 11) 4 6
+    , Datum (april 4) Nothing 0 4
+    , Datum (april 5) (Just 10) 5 7
+    , Datum (april 6) (Just 12) 6 7
+    , Datum (april 7) (Just 12) 5 7
+    , Datum (april 8) (Just 12) 2 4
+    , Datum (april 9) (Just 12) 10 5
+    , Datum (april 10) (Just 11) 6 5
+    ]
+
+
+chartConfig : Chart.Config Datum FrontendMsg
+chartConfig =
+    { id = chartId
+    , toMsg = ChartMsg
+    , toDate = .date
+    , bars =
+        [ { label = "v1", color = rgba 0 0 0 1, accessor = .value1 }
+        , { label = "v2", color = rgba 0 0 0 0.8, accessor = .value2 }
+        ]
+    , lines =
+        [ { label = "l1", color = rgba 0 0 0 1, accessor = .goal }
+        ]
+    , items = sampleDays
+    , popover = Just popoverConfig
+    , yExtent = Nothing
+    }
+
+
+  popoverConfig : Chart.Popover Datum FrontendMsg
+  popoverConfig =
+      { width = always 100
+      , height = always 60
+      , visible = always True
+      , view =
+          \\x ->
+              column [ width fill, Font.size 14, Font.color <| rgb 1 1 1 ]
+                  [ el [] <| text <| "V1: " ++ String.fromFloat x.value1
+                  , el [] <| text <| "V2: " ++ String.fromFloat x.value2
+                  ]
+      }
+"""
