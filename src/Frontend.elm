@@ -1,6 +1,8 @@
 module Frontend exposing (..)
 
 import Browser exposing (UrlRequest(..))
+import Browser.Dom
+import Browser.Events
 import Browser.Navigation as Nav
 import Chart
 import Date
@@ -12,6 +14,7 @@ import Element.Region as Region
 import Html
 import Html.Attributes as Attr
 import Lamdera
+import Task
 import Time exposing (..)
 import Types exposing (..)
 import Url
@@ -28,7 +31,7 @@ app =
         , onUrlChange = UrlChanged
         , update = update
         , updateFromBackend = updateFromBackend
-        , subscriptions = \m -> Sub.none
+        , subscriptions = subscriptions
         , view = view
         }
 
@@ -37,8 +40,9 @@ init : Url.Url -> Nav.Key -> ( Model, Cmd FrontendMsg )
 init url key =
     ( { key = key
       , chart = Chart.init Nothing
+      , containerSize = Nothing
       }
-    , Cmd.none
+    , Task.perform identity <| Task.succeed CalcChartSize
     )
 
 
@@ -66,6 +70,15 @@ update msg model =
                     Chart.update subMsg model.chart
             in
             ( { model | chart = newChart }, Cmd.none )
+
+        CalcChartSize ->
+            ( model, Task.attempt GotContainerSize <| getElementBox chartId )
+
+        OnResize ->
+            ( model, Task.perform identity <| Task.succeed CalcChartSize )
+
+        GotContainerSize size ->
+            ( { model | containerSize = Result.toMaybe size }, Cmd.none )
 
         NoOpFrontendMsg ->
             ( model, Cmd.none )
@@ -118,11 +131,16 @@ viewCharts model =
             text "Chart examples"
         , el [ Font.variant Font.smallCaps, Font.bold, Font.size 16, moveDown 10 ] <|
             text "stacked bar chart with goal"
-        , column [ width (fill |> maximum 1024), spacing 10 ]
+        , column [ width fill, height (px 320), spacing 10, htmlAttribute <| Attr.id chartId ]
             [ el [ Border.rounded 4, width fill, Background.color (rgba 0 0 0 0.1) ] <|
-                Chart.view chartConfig model.chart { width = 1000, height = 400 }
+                case model.containerSize of
+                    Nothing ->
+                        none
+
+                    Just ( w, h ) ->
+                        Chart.view chartConfig model.chart { width = w, height = h }
             , el [ Font.size 16, Font.variant Font.smallCaps ] <| text "chart configuration"
-            , el [ Border.rounded 4, Background.color <| rgba 0 0 0 0.1, Font.size 14, Font.family [ Font.monospace ], padding 10 ] <| text """
+            , el [ width fill, Border.rounded 4, Background.color <| rgba 0 0 0 0.1, Font.size 14, Font.family [ Font.monospace ], padding 10 ] <| text """
 chartId =
     "my-chart"
 
@@ -188,6 +206,19 @@ popoverConfig =
         ]
 
 
+subscriptions : Model -> Sub FrontendMsg
+subscriptions _ =
+    Sub.batch
+        [ Browser.Events.onResize (\_ _ -> OnResize)
+        ]
+
+
+getElementBox : String -> Task.Task Browser.Dom.Error ( Float, Float )
+getElementBox id =
+    Browser.Dom.getElement id
+        |> Task.map (\v -> ( v.element.width, v.element.height ))
+
+
 
 ---- CHART ----
 
@@ -228,8 +259,8 @@ chartConfig =
     , toMsg = ChartMsg
     , toDate = .date
     , bars =
-        [ { label = "v1", color = rgba 0 0 0 0.6, accessor = .value1 }
-        , { label = "v2", color = rgba 0 0 0 0.4, accessor = .value2 }
+        [ { label = "v1", color = rgba 0 0 0 0.8, accessor = .value1 }
+        , { label = "v2", color = rgba 0 0 0 0.6, accessor = .value2 }
         ]
     , lines =
         [ { label = "l1", color = rgba 0 0 0 1, accessor = .goal }
