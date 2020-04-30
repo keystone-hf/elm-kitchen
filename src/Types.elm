@@ -4,13 +4,15 @@ import Browser exposing (UrlRequest)
 import Browser.Dom
 import Browser.Navigation exposing (Key)
 import Chart
+import Dict exposing (Dict)
 import Url exposing (Url)
 
 
 type alias FrontendModel =
     { key : Key
     , chart : Chart.Model
-    , containerSize : Maybe ( Float, Float )
+    , linkedChart : Chart.Model
+    , containerSize : Dict String ( Float, Float )
     }
 
 
@@ -22,9 +24,10 @@ type FrontendMsg
     = UrlClicked UrlRequest
     | UrlChanged Url
     | ChartMsg Chart.Msg
-    | CalcChartSize
+    | LinkedChartMsg Chart.Msg
+    | CalcChartSize String
     | OnResize
-    | GotContainerSize (Result Browser.Dom.Error ( Float, Float ))
+    | GotContainerSize String (Result Browser.Dom.Error ( Float, Float ))
     | NoOpFrontendMsg
 
 

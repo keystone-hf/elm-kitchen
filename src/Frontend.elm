@@ -6,6 +6,7 @@ import Browser.Events
 import Browser.Navigation as Nav
 import Chart
 import Date
+import Dict
 import Element exposing (..)
 import Element.Background as Background
 import Element.Border as Border
@@ -42,9 +43,12 @@ init : Url.Url -> Nav.Key -> ( Model, Cmd FrontendMsg )
 init url key =
     ( { key = key
       , chart = Chart.init Nothing
-      , containerSize = Nothing
+      , linkedChart = Chart.init Nothing
+      , containerSize = Dict.empty
       }
-    , Task.perform identity <| Task.succeed CalcChartSize
+    , Cmd.batch <|
+        List.map (Task.perform identity << Task.succeed << CalcChartSize)
+            [ chartId, linkedChartId1, linkedChartId2 ]
     )
 
 
@@ -73,14 +77,35 @@ update msg model =
             in
             ( { model | chart = newChart }, Cmd.none )
 
-        CalcChartSize ->
-            ( model, Task.attempt GotContainerSize <| getElementBox chartId )
+        LinkedChartMsg subMsg ->
+            let
+                ( newChart, _ ) =
+                    Chart.update subMsg model.linkedChart
+            in
+            ( { model | linkedChart = newChart }, Cmd.none )
+
+        CalcChartSize id ->
+            ( model, Task.attempt (GotContainerSize id) <| getElementBox id )
 
         OnResize ->
-            ( model, Task.perform identity <| Task.succeed CalcChartSize )
+            ( model
+            , Cmd.batch <|
+                List.map (Task.perform identity << Task.succeed << CalcChartSize)
+                    [ chartId, linkedChartId1, linkedChartId2 ]
+            )
 
-        GotContainerSize size ->
-            ( { model | containerSize = Result.toMaybe size }, Cmd.none )
+        GotContainerSize id size ->
+            ( { model
+                | containerSize =
+                    case Result.toMaybe size of
+                        Just size_ ->
+                            Dict.insert id size_ model.containerSize
+
+                        Nothing ->
+                            model.containerSize
+              }
+            , Cmd.none
+            )
 
         NoOpFrontendMsg ->
             ( model, Cmd.none )
@@ -173,8 +198,18 @@ viewLogo =
 viewCharts model =
     let
         viewChart =
-            model.containerSize
+            Dict.get chartId model.containerSize
                 |> Maybe.map (\( w, h ) -> Chart.view chartConfig model.chart { width = w, height = h })
+                |> Maybe.withDefault none
+
+        viewLinkedChart1 =
+            Dict.get linkedChartId1 model.containerSize
+                |> Maybe.map (\( w, h ) -> Chart.view linkedChartConfig1 model.linkedChart { width = w, height = h })
+                |> Maybe.withDefault none
+
+        viewLinkedChart2 =
+            Dict.get linkedChartId2 model.containerSize
+                |> Maybe.map (\( w, h ) -> Chart.view linkedChartConfig2 model.linkedChart { width = w, height = h })
                 |> Maybe.withDefault none
     in
     column [ width fill, spacing 10, height fill ]
@@ -182,7 +217,23 @@ viewCharts model =
             text "Chart examples"
         , el [ Font.variant Font.smallCaps, Font.size 16 ] <|
             text "stacked bar chart with goal line"
-        , column [ width fill, spacing 10 ]
+        , column
+            [ width fill
+            , spacing 20
+            , onRight <|
+                newTabLink
+                    [ moveLeft 20
+                    , moveUp 30
+                    ]
+                    { url = "https://github.com/keystone-hf/elm-kitchen"
+                    , label =
+                        image
+                            [ width (px 20)
+                            , height (px 20)
+                            ]
+                            { src = "/gh.png", description = "GitHub Octocat" }
+                    }
+            ]
             [ el
                 [ Border.rounded 4
                 , Border.width 1
@@ -190,21 +241,28 @@ viewCharts model =
                 , width fill
                 , height (px 320)
                 , htmlAttribute <| Attr.id chartId
-                , onRight <|
-                    newTabLink
-                        [ moveLeft 20
-                        , moveUp 30
-                        ]
-                        { url = "https://github.com/keystone-hf/elm-kitchen"
-                        , label =
-                            image
-                                [ width (px 20)
-                                , height (px 20)
-                                ]
-                                { src = "/gh.png", description = "GitHub Octocat" }
-                        }
                 ]
                 viewChart
+            , wrappedRow [ width fill, spacing 20 ]
+                [ el
+                    [ Border.rounded 4
+                    , Border.width 1
+                    , Border.dashed
+                    , width (fill |> minimum 320)
+                    , height (px 320)
+                    , htmlAttribute <| Attr.id linkedChartId1
+                    ]
+                    viewLinkedChart1
+                , el
+                    [ Border.rounded 4
+                    , Border.width 1
+                    , Border.dashed
+                    , width (fill |> minimum 320)
+                    , height (px 320)
+                    , htmlAttribute <| Attr.id linkedChartId2
+                    ]
+                    viewLinkedChart2
+                ]
             , column
                 [ width fill
                 , Border.width 1
@@ -253,6 +311,14 @@ chartId =
     "my-chart"
 
 
+linkedChartId1 =
+    "linked-chart1"
+
+
+linkedChartId2 =
+    "linked-chart2"
+
+
 type alias Datum =
     { date : Date.Date
     , goal : Maybe Float
@@ -269,9 +335,9 @@ sampleDays =
     [ Datum (april 1) (Just 10) 5 7
     , Datum (april 2) (Just 8) 6 8
     , Datum (april 3) (Just 11) 4 6
-    , Datum (april 4) Nothing 0 4
+    , Datum (april 4) Nothing 1 4
     , Datum (april 5) (Just 10) 5 7
-    , Datum (april 6) (Just 12) 6 7
+    , Datum (april 6) (Just 12) 6 6
     , Datum (april 7) (Just 12) 5 7
     , Datum (april 8) (Just 12) 2 4
     , Datum (april 9) (Just 12) 10 5
@@ -291,10 +357,50 @@ chartConfig =
         , { label = "v2", color = rgba 0 0 0 0.6, accessor = .value2 }
         ]
     , lines =
-        [ { label = "l1", color = rgba 0 0 0 1, accessor = .goal }
+        [ { label = "l1", color = rgba 0 0 0 1, lineType = Chart.StepCurve, area = Nothing, accessor = .goal }
         ]
     , items = sampleDays
     , popover = Just popoverConfig
+    , yExtent = Nothing
+    }
+
+
+linkedChartConfig1 : Chart.Config Datum FrontendMsg
+linkedChartConfig1 =
+    { id = linkedChartId1
+    , toMsg = LinkedChartMsg
+    , toDate = .date
+    , bars = []
+    , lines =
+        [ { label = "a1"
+          , color = rgba 0 0 0 1
+          , lineType = Chart.MonotoneInXCurve
+          , area = Just { bg1 = rgba 0 0 0 0.2, bg2 = rgba 0 0 0 0 }
+          , accessor = Just << .value1
+          }
+        ]
+    , items = sampleDays
+    , popover = Just (linkedPopoverConfig "V1" .value1)
+    , yExtent = Nothing
+    }
+
+
+linkedChartConfig2 : Chart.Config Datum FrontendMsg
+linkedChartConfig2 =
+    { id = linkedChartId2
+    , toMsg = LinkedChartMsg
+    , toDate = .date
+    , bars = []
+    , lines =
+        [ { label = "a2"
+          , color = rgba 0 0 0 1
+          , lineType = Chart.MonotoneInXCurve
+          , area = Just { bg1 = rgba 0 0 0 0.2, bg2 = rgba 0 0 0 0 }
+          , accessor = Just << .value2
+          }
+        ]
+    , items = sampleDays
+    , popover = Just (linkedPopoverConfig "V2" .value2)
     , yExtent = Nothing
     }
 
@@ -313,10 +419,31 @@ popoverConfig =
     }
 
 
+linkedPopoverConfig : String -> (Datum -> Float) -> Chart.Popover Datum FrontendMsg
+linkedPopoverConfig label toValue =
+    { width = always 100
+    , height = always 44
+    , visible = always True
+    , view =
+        \x ->
+            column [ width fill, Font.size 14, Font.color <| rgb 1 1 1 ]
+                [ el [] <| text <| label ++ ": " ++ String.fromFloat (toValue x)
+                ]
+    }
+
+
 snippetChart =
     """
 chartId =
     "my-chart"
+
+
+linkedChartId1 =
+    "linked-chart1"
+
+
+linkedChartId2 =
+    "linked-chart2"
 
 
 type alias Datum =
@@ -335,13 +462,15 @@ sampleDays =
     [ Datum (april 1) (Just 10) 5 7
     , Datum (april 2) (Just 8) 6 8
     , Datum (april 3) (Just 11) 4 6
-    , Datum (april 4) Nothing 0 4
+    , Datum (april 4) Nothing 1 4
     , Datum (april 5) (Just 10) 5 7
-    , Datum (april 6) (Just 12) 6 7
+    , Datum (april 6) (Just 12) 6 6
     , Datum (april 7) (Just 12) 5 7
     , Datum (april 8) (Just 12) 2 4
     , Datum (april 9) (Just 12) 10 5
     , Datum (april 10) (Just 11) 6 5
+    , Datum (april 11) (Just 11) 8 6
+    , Datum (april 12) (Just 10) 5 3
     ]
 
 
@@ -351,11 +480,11 @@ chartConfig =
     , toMsg = ChartMsg
     , toDate = .date
     , bars =
-        [ { label = "v1", color = rgba 0 0 0 1, accessor = .value1 }
-        , { label = "v2", color = rgba 0 0 0 0.8, accessor = .value2 }
+        [ { label = "v1", color = rgba 0 0 0 0.8, accessor = .value1 }
+        , { label = "v2", color = rgba 0 0 0 0.6, accessor = .value2 }
         ]
     , lines =
-        [ { label = "l1", color = rgba 0 0 0 1, accessor = .goal }
+        [ { label = "l1", color = rgba 0 0 0 1, lineType = Chart.StepCurve, area = Nothing, accessor = .goal }
         ]
     , items = sampleDays
     , popover = Just popoverConfig
@@ -363,16 +492,69 @@ chartConfig =
     }
 
 
-  popoverConfig : Chart.Popover Datum FrontendMsg
-  popoverConfig =
-      { width = always 100
-      , height = always 60
-      , visible = always True
-      , view =
-          \\x ->
-              column [ width fill, Font.size 14, Font.color <| rgb 1 1 1 ]
-                  [ el [] <| text <| "V1: " ++ String.fromFloat x.value1
-                  , el [] <| text <| "V2: " ++ String.fromFloat x.value2
-                  ]
-      }
+linkedChartConfig1 : Chart.Config Datum FrontendMsg
+linkedChartConfig1 =
+    { id = linkedChartId1
+    , toMsg = LinkedChartMsg
+    , toDate = .date
+    , bars = []
+    , lines =
+        [ { label = "a1"
+          , color = rgba 0 0 0 1
+          , lineType = Chart.MonotoneInXCurve
+          , area = Just { bg1 = rgba 0 0 0 0.2, bg2 = rgba 0 0 0 0 }
+          , accessor = Just << .value1
+          }
+        ]
+    , items = sampleDays
+    , popover = Just (linkedPopoverConfig "V1" .value1)
+    , yExtent = Nothing
+    }
+
+
+linkedChartConfig2 : Chart.Config Datum FrontendMsg
+linkedChartConfig2 =
+    { id = linkedChartId2
+    , toMsg = LinkedChartMsg
+    , toDate = .date
+    , bars = []
+    , lines =
+        [ { label = "a2"
+          , color = rgba 0 0 0 1
+          , lineType = Chart.MonotoneInXCurve
+          , area = Just { bg1 = rgba 0 0 0 0.2, bg2 = rgba 0 0 0 0 }
+          , accessor = Just << .value2
+          }
+        ]
+    , items = sampleDays
+    , popover = Just (linkedPopoverConfig "V2" .value2)
+    , yExtent = Nothing
+    }
+
+
+popoverConfig : Chart.Popover Datum FrontendMsg
+popoverConfig =
+    { width = always 100
+    , height = always 60
+    , visible = always True
+    , view =
+        \\x ->
+            column [ width fill, Font.size 14, Font.color <| rgb 1 1 1 ]
+                [ el [] <| text <| "V1: " ++ String.fromFloat x.value1
+                , el [] <| text <| "V2: " ++ String.fromFloat x.value2
+                ]
+    }
+
+
+linkedPopoverConfig : String -> (Datum -> Float) -> Chart.Popover Datum FrontendMsg
+linkedPopoverConfig label toValue =
+    { width = always 100
+    , height = always 44
+    , visible = always True
+    , view =
+        \\x ->
+            column [ width fill, Font.size 14, Font.color <| rgb 1 1 1 ]
+                [ el [] <| text <| label ++ ": " ++ String.fromFloat (toValue x)
+                ]
+    }
 """

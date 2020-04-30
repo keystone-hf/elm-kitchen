@@ -1,5 +1,6 @@
 module Chart exposing
     ( Config
+    , LineType(..)
     , Model
     , Msg(..)
     , Popover
@@ -57,7 +58,7 @@ type alias Config a msg =
     , toMsg : Msg -> msg
     , toDate : a -> Date
     , bars : List { label : String, color : Element.Color, accessor : a -> Float }
-    , lines : List { label : String, color : Element.Color, accessor : a -> Maybe Float }
+    , lines : List { label : String, color : Element.Color, lineType : LineType, area : Maybe Area, accessor : a -> Maybe Float }
     , items : List a
     , popover : Maybe (Popover a msg)
     , yExtent : Maybe ( Float, Float )
@@ -72,11 +73,24 @@ type alias Popover a msg =
     }
 
 
-type alias Line =
+type alias LineData =
     { label : String
     , color : Element.Color
+    , lineType : LineType
     , items : List ( Date, Maybe Float )
+    , area : Maybe Area
     }
+
+
+type alias Area =
+    { bg1 : Element.Color
+    , bg2 : Element.Color
+    }
+
+
+type LineType
+    = MonotoneInXCurve
+    | StepCurve
 
 
 
@@ -147,12 +161,17 @@ view : Config a msg -> Model -> { width : Float, height : Float } -> Element.Ele
 view cfg model size =
     let
         -- Lines
-        lines : List Line
+        lines : List LineData
         lines =
             cfg.lines
                 |> List.map
-                    (\{ label, color, accessor } ->
-                        { label = label, color = color, items = List.map (\v -> ( cfg.toDate v, accessor v )) cfg.items }
+                    (\{ label, color, accessor, lineType, area } ->
+                        { label = label
+                        , color = color
+                        , lineType = lineType
+                        , area = area
+                        , items = List.map (\v -> ( cfg.toDate v, accessor v )) cfg.items
+                        }
                     )
 
         lineExtent =
@@ -248,6 +267,31 @@ view cfg model size =
         ]
 
 
+overlayColumn : (Msg -> msg) -> BandScale Date -> Float -> Date -> Svg msg
+overlayColumn toMsg xScale maxHeight date =
+    let
+        width_ =
+            Scale.bandwidth xScale + 1
+
+        x_ =
+            Scale.convert xScale date
+    in
+    g [ class [ "overlay" ] ]
+        [ rect
+            [ x <| x_
+            , y <| 0
+            , width width_
+            , height maxHeight
+            , fill <| Paint <| toColor <| rgba 255 255 255 0
+            , TypedSvg.Core.attribute "id" <| columnId date
+            , onClick <| (toMsg << OnColumnClick) date
+            , TypedSvg.Events.onMouseEnter <| (toMsg << OnColumnEnter) date
+            , TypedSvg.Events.onMouseLeave (toMsg <| OnColumnLeave)
+            ]
+            []
+        ]
+
+
 column : (Date -> Bool) -> (Date -> Bool) -> BandScale Date -> List Color -> ( Date, List ( Float, Float ) ) -> Svg msg
 column isSelected_ isHovered_ xScale colors ( date, values ) =
     let
@@ -314,34 +358,17 @@ column isSelected_ isHovered_ xScale colors ( date, values ) =
         (List.indexedMap (\i v -> block (i + 1 == length_) v) <| List.zip colors values)
 
 
-overlayColumn : (Msg -> msg) -> BandScale Date -> Float -> Date -> Svg msg
-overlayColumn toMsg xScale maxHeight date =
-    let
-        width_ =
-            Scale.bandwidth xScale + 1
-
-        x_ =
-            Scale.convert xScale date
-    in
-    g [ class [ "overlay" ] ]
-        [ rect
-            [ x <| x_
-            , y <| 0
-            , width width_
-            , height maxHeight
-            , fill <| Paint <| toColor <| rgba 255 255 255 0
-            , TypedSvg.Core.attribute "id" <| columnId date
-            , onClick <| (toMsg << OnColumnClick) date
-            , TypedSvg.Events.onMouseEnter <| (toMsg << OnColumnEnter) date
-            , TypedSvg.Events.onMouseLeave (toMsg <| OnColumnLeave)
-            ]
-            []
-        ]
-
-
-line : (Date -> Bool) -> (Date -> Bool) -> BandScale Date -> ContinuousScale Float -> Line -> Svg msg
+line : (Date -> Bool) -> (Date -> Bool) -> BandScale Date -> ContinuousScale Float -> LineData -> Svg msg
 line _ isHovered_ xScale yScale lineData =
     let
+        lineShape =
+            case lineData.lineType of
+                StepCurve ->
+                    Shape.stepCurve 0.5
+
+                MonotoneInXCurve ->
+                    Shape.monotoneInXCurve
+
         line_ : Path
         line_ =
             lineData.items
@@ -357,7 +384,7 @@ line _ isHovered_ xScale yScale lineData =
                             _ ->
                                 Nothing
                     )
-                |> Shape.line (Shape.stepCurve 0.5)
+                |> Shape.line lineShape
 
         points_ : List (Svg msg)
         points_ =
@@ -388,9 +415,52 @@ line _ isHovered_ xScale yScale lineData =
                                 Nothing
                     )
                 |> Maybe.values
+
+        area_ : Path
+        area_ =
+            lineData.items
+                |> List.map
+                    (\( x, y ) ->
+                        case y of
+                            Just y_ ->
+                                Just
+                                    ( ( Scale.convert xScale x + (Scale.bandwidth xScale / 2), Tuple.first (Scale.rangeExtent yScale) )
+                                    , ( Scale.convert xScale x + (Scale.bandwidth xScale / 2), Scale.convert yScale y_ )
+                                    )
+
+                            _ ->
+                                Nothing
+                    )
+                |> Shape.area lineShape
+
+        areaSvg =
+            case lineData.area of
+                Just area ->
+                    let
+                        rgbaStr { red, green, blue, alpha } =
+                            "rgba(" ++ String.fromFloat red ++ ", " ++ String.fromFloat green ++ ", " ++ String.fromFloat blue ++ ", " ++ String.fromFloat alpha ++ ")"
+                    in
+                    [ TypedSvg.linearGradient
+                        [ TypedSvg.Core.attribute "id" "tc-area-gr"
+                        , TypedSvg.Attributes.x1 (Percent 0)
+                        , TypedSvg.Attributes.y1 (Percent 0)
+                        , TypedSvg.Attributes.x2 (Percent 0)
+                        , TypedSvg.Attributes.y2 (Percent 100)
+                        ]
+                        [ TypedSvg.stop [ TypedSvg.Attributes.offset "0%", TypedSvg.Attributes.stopColor <| rgbaStr <| Element.toRgb area.bg1 ] []
+                        , TypedSvg.stop [ TypedSvg.Attributes.offset "100%", TypedSvg.Attributes.stopColor <| rgbaStr <| Element.toRgb area.bg2 ] []
+                        ]
+                    , Path.element area_ [ strokeWidth 1, fill <| Reference "tc-area-gr" ]
+                    , Path.element line_ [ stroke (Paint <| toColor lineData.color), strokeWidth 1, fill PaintNone ]
+                    ]
+
+                Nothing ->
+                    []
     in
     g []
-        ([ Path.element line_ [ stroke (Paint <| toColor lineData.color), strokeWidth 1, fill PaintNone ] ]
+        (areaSvg
+            ++ [ Path.element line_ [ stroke (Paint <| toColor lineData.color), strokeWidth 1, fill PaintNone ]
+               ]
             ++ points_
         )
 
@@ -420,15 +490,18 @@ popoverView cfg model xScale yScale =
                 bandwidth =
                     Scale.bandwidth xScale
 
+                columnWidth =
+                    min 40 (bandwidth * 0.7)
+
                 px_ =
                     (item |> Maybe.map cfg.toDate |> Maybe.unwrap 0 (Scale.convert xScale)) + (bandwidth / 2)
 
                 x_ =
-                    if px_ + (bandwidth / 2) + 10 + popoverWidth > (Tuple.second <| Scale.range xScale) then
-                        px_ + padding.left - (bandwidth / 2) - 10 - popoverWidth |> String.fromFloat
+                    if px_ + (columnWidth / 2) + 10 + popoverWidth > (Tuple.second <| Scale.range xScale) then
+                        px_ + padding.left - (columnWidth / 2) - 10 - popoverWidth |> String.fromFloat
 
                     else
-                        px_ + padding.left + (bandwidth / 2) + 10 |> String.fromFloat
+                        px_ + padding.left + (columnWidth / 2) + 10 |> String.fromFloat
 
                 maxY =
                     Tuple.first <| Scale.range yScale
